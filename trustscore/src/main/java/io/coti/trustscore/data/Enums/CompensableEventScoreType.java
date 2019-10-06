@@ -26,3 +26,6 @@ public enum CompensableEventScoreType {
         return text;
     }
 }
+
+// todo delete
+

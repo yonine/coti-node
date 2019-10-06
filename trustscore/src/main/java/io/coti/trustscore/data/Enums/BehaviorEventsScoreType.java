@@ -32,3 +32,5 @@ public enum BehaviorEventsScoreType {
         return text;
     }
 }
+
+// todo delete
