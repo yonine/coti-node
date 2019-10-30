@@ -25,9 +25,7 @@ import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.HttpServerErrorException;
 import org.springframework.web.client.RestTemplate;
 
-import java.io.BufferedReader;
-import java.io.File;
-import java.io.FileReader;
+import java.io.*;
 import java.math.BigDecimal;
 import java.nio.ByteBuffer;
 import java.time.Instant;
@@ -44,6 +42,7 @@ import static io.coti.basenode.http.BaseNodeHttpStringConstants.STATUS_ERROR;
 @Service
 public class BaseNodeClusterStampService implements IClusterStampService {
 
+    protected static final String BAD_CSV_FILE_FORMAT = "Bad csv file format";
     private static final int CLUSTERSTAMP_NAME_ARRAY_NOT_UPDATED_LENGTH = 3;
     private static final int CLUSTERSTAMP_UPDATE_TIME_AND_FILE_TYPE_NOT_UPDATED_INDEX = 2;
     private static final int CLUSTERSTAMP_NAME_ARRAY_LENGTH = 4;
@@ -63,7 +62,6 @@ public class BaseNodeClusterStampService implements IClusterStampService {
     private static final int CURRENCY_HASH_INDEX_IN_CLUSTERSTAMP_LINE = 2;
     private static final int NUMBER_OF_SIGNATURE_LINE_DETAILS = 2;
     private static final int LONG_MAX_LENGTH = 19;
-    protected static final String BAD_CSV_FILE_FORMAT = "Bad csv file format";
     private static final String SIGNATURE_LINE_TOKEN = "# Signature";
     private static final String CLUSTERSTAMP_FILE_PREFIX = "clusterstamp";
     private static final String CLUSTERSTAMP_FILE_TYPE = "csv";
@@ -73,8 +71,6 @@ public class BaseNodeClusterStampService implements IClusterStampService {
     @Value("${clusterstamp.folder}")
     protected String clusterStampFolder;
     protected String clusterStampBucketName;
-    @Value("${application.name}")
-    private String applicationName;
     @Autowired
     protected IBalanceService balanceService;
     @Autowired
@@ -83,8 +79,6 @@ public class BaseNodeClusterStampService implements IClusterStampService {
     protected Transactions transactions;
     @Autowired
     protected ClusterStampCrypto clusterStampCrypto;
-    @Autowired
-    private GetClusterStampFileNamesCrypto getClusterStampFileNamesCrypto;
     @Autowired
     protected INetworkService networkService;
     @Autowired
@@ -97,6 +91,10 @@ public class BaseNodeClusterStampService implements IClusterStampService {
     protected ICurrencyService currencyService;
     @Autowired
     protected ApplicationContext applicationContext;
+    @Value("${application.name}")
+    private String applicationName;
+    @Autowired
+    private GetClusterStampFileNamesCrypto getClusterStampFileNamesCrypto;
 
     @Override
     public void init() {

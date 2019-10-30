@@ -14,6 +14,7 @@ public class ClusterStampData implements ISignable, ISignValidatable {
 
     private Hash zeroSpendServerHash;
     private List<byte[]> signatureMessage = new ArrayList<>();
+    private List<ClusterStampDataRow> dataRows = new ArrayList<>();
     private int messageByteSize = 0;
     private SignatureData zeroSpendSignature;
 

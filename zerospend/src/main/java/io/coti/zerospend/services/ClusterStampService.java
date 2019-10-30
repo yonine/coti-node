@@ -10,6 +10,8 @@ import org.springframework.stereotype.Service;
 
 import java.io.BufferedWriter;
 import java.io.FileWriter;
+import java.math.BigDecimal;
+import java.nio.ByteBuffer;
 
 
 @Slf4j
@@ -69,9 +71,28 @@ public class ClusterStampService extends BaseNodeClusterStampService {
     }
 
     private void generateOneLineClusterStampFile(ClusterStampNameData clusterStamp, CurrencyData currencyData) {
-        String line = generateClusterStampLineFromNewCurrency(currencyData);
-        fileSystemService.createAndWriteLineToFile(clusterStampFolder, super.getClusterStampFileName(clusterStamp), line);
+        ClusterStampData clusterStampData = createClusterStampDataFromCurrencyData(currencyData);
+        clusterStampCrypto.signMessage(clusterStampData);
+        createClusterStampFileFromClusterStampData(clusterStampData, clusterStampFolder, super.getClusterStampFileName(clusterStamp));
+    }
 
+    private ClusterStampData createClusterStampDataFromCurrencyData(CurrencyData currencyData) {
+        ClusterStampData clusterStampData = new ClusterStampData();
+
+        Hash addressHash = new Hash(this.currencyAddress);
+        BigDecimal currencyAmountInAddress = currencyData.getTotalSupply();
+        Hash currencyHash = currencyData.getHash();
+
+        byte[] addressHashInBytes = addressHash.getBytes();
+        byte[] addressCurrencyAmountInBytes = currencyAmountInAddress.stripTrailingZeros().toPlainString().getBytes();
+        byte[] currencyHashInBytes = currencyHash.getBytes();
+        byte[] balanceInBytes = ByteBuffer.allocate(addressHashInBytes.length + addressCurrencyAmountInBytes.length + currencyHashInBytes.length)
+                .put(addressHashInBytes).put(addressCurrencyAmountInBytes).put(currencyHashInBytes).array();
+        clusterStampData.getSignatureMessage().add(balanceInBytes);
+        clusterStampData.getDataRows().add(new ClusterStampDataRow(addressHash, currencyAmountInAddress, currencyHash));
+        clusterStampData.incrementMessageByteSize(balanceInBytes.length);
+
+        return clusterStampData;
     }
 
     private String generateClusterStampLineFromNewCurrency(CurrencyData currencyData) {
@@ -93,8 +114,8 @@ public class ClusterStampService extends BaseNodeClusterStampService {
         uploadMajorClusterStamp = true;
     }
 
-    private void updateClusterStampFileWithSignature(SignatureData signature, String clusterstampFileLocation) {
-        try (FileWriter clusterstampFileWriter = new FileWriter(clusterstampFileLocation, true);
+    private void updateClusterStampFileWithSignature(SignatureData signature, String clusterStampFileLocation) {
+        try (FileWriter clusterstampFileWriter = new FileWriter(clusterStampFileLocation, true);
              BufferedWriter clusterStampBufferedWriter = new BufferedWriter(clusterstampFileWriter)) {
             clusterStampBufferedWriter.newLine();
             clusterStampBufferedWriter.newLine();
@@ -119,4 +140,26 @@ public class ClusterStampService extends BaseNodeClusterStampService {
         loadClusterStamp(clusterStampNameData);
         return clusterStampNameData;
     }
+
+    protected void createClusterStampFileFromClusterStampData(ClusterStampData clusterStampData, String clusterStampDirPath, String clusterStampFileName) {
+        String clusterStampFileLocation = clusterStampDirPath + "/" + clusterStampFileName;
+        String clusterStampDelimiter = ",";
+        try (FileWriter clusterStampFileWriter = new FileWriter(clusterStampFileLocation);
+             BufferedWriter clusterStampBufferedWriter = new BufferedWriter(clusterStampFileWriter)) {
+            for (ClusterStampDataRow clusterStampRow : clusterStampData.getDataRows()) {
+                clusterStampBufferedWriter.append(clusterStampRow.getAddressHash().toString()).append(clusterStampDelimiter)
+                        .append(clusterStampRow.getAmount().toString()).append(clusterStampDelimiter).append(clusterStampRow.getCurrencyHash().toString());
+                clusterStampBufferedWriter.newLine();
+            }
+            clusterStampBufferedWriter.newLine();
+            clusterStampBufferedWriter.append("# Signature");
+            clusterStampBufferedWriter.newLine();
+            clusterStampBufferedWriter.append("r," + clusterStampData.getSignature().getR());
+            clusterStampBufferedWriter.newLine();
+            clusterStampBufferedWriter.append("s," + clusterStampData.getSignature().getS());
+        } catch (Exception e) {
+            throw new ClusterStampValidationException("Exception at clusterstamp signing.", e);
+        }
+    }
+
 }
