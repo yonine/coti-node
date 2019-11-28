@@ -130,10 +130,10 @@ public class BucketTransactionScoreCalculator extends BucketScoresCalculator<Buc
 
         if (userParameters.getBalanceWeight() != 0) {
             // Calculate every day from the last days balance score.
-            Map<LocalDate, Double> scoresToDatesScoreMap = collectNewDaysAverageBalanceScore();
+            Map<LocalDate, BigDecimal> scoresToDatesScoreMap = collectNewDaysAverageBalanceScore();
 
-            for (Map.Entry<LocalDate, Double> dayToScoreCalculateEntry : scoresToDatesScoreMap.entrySet()) {
-                double dailyScore = Math.tanh(dayToScoreCalculateEntry.getValue() / userParameters.getBalanceLevel08() * UserParameters.atanh08);
+            for (Map.Entry<LocalDate, BigDecimal> dayToScoreCalculateEntry : scoresToDatesScoreMap.entrySet()) {
+                double dailyScore = Math.tanh(dayToScoreCalculateEntry.getValue().doubleValue() / userParameters.getBalanceLevel08() * UserParameters.atanh08);
                 if (!lastUpdateDate.equals(dayToScoreCalculateEntry.getKey())) {
                     int daysDiff = (int) ChronoUnit.DAYS.between(dayToScoreCalculateEntry.getKey(), lastUpdateDate);
                     dailyScore = DatesCalculation.calculateDecay(userParameters.getBalanceSemiDecay(), dailyScore, daysDiff);
@@ -153,7 +153,7 @@ public class BucketTransactionScoreCalculator extends BucketScoresCalculator<Buc
         if (!currentMonthBalanceMap.isEmpty()) {
 
             LocalDate lastDayWithChangeInBalance = currentMonthBalanceMap.lastKey();
-            double previousBalanceCount = currentMonthBalanceMap.get(lastDayWithChangeInBalance).getCount();
+            BigDecimal previousBalanceCount = currentMonthBalanceMap.get(lastDayWithChangeInBalance).getCount();
             double previousBalanceScore = currentMonthBalanceMap.get(lastDayWithChangeInBalance).getContribution();
             int daysDiff = 1;
 
@@ -165,7 +165,7 @@ public class BucketTransactionScoreCalculator extends BucketScoresCalculator<Buc
         }
     }
 
-    private Map<LocalDate, Double> collectNewDaysAverageBalanceScore() {
+    private Map<LocalDate, BigDecimal> collectNewDaysAverageBalanceScore() {
         return bucketData.getCurrentMonthDayToBalanceCountAndContribution().entrySet().stream()
                 .filter(x -> x.getValue().getContribution() == 0)
                 .collect(Collectors.toMap(e -> e.getKey(), e -> e.getValue().getCount()));
@@ -192,7 +192,7 @@ public class BucketTransactionScoreCalculator extends BucketScoresCalculator<Buc
     public void addToBucket(TransactionEventData transactionScoreData) {
 
         // Add dailyEvents to calculations
-        double transactionAmount = transactionScoreData.getAmount().doubleValue();
+        BigDecimal transactionAmount = transactionScoreData.getAmount();
         LocalDate eventDate = transactionScoreData.getEventDate();
         LocalDate nextDate = eventDate.plusDays(1);
         ConcurrentSkipListMap<LocalDate, BalanceAndContribution> currentMonthBalanceMap
@@ -201,8 +201,8 @@ public class BucketTransactionScoreCalculator extends BucketScoresCalculator<Buc
         if (transactionScoreData.getTransactionEventType() == TransactionEventType.SENDER_EVENT ||
                 transactionScoreData.getTransactionEventType() == TransactionEventType.SENDER_NEW_ADDRESS_EVENT) {
             bucketData.increaseCurrentDateNumberOfTransactionsByOne();
-            bucketData.setCurrentDateTurnOver(bucketData.getCurrentDateTurnOver() + Math.abs(transactionAmount));
-            transactionAmount = -transactionAmount;
+            bucketData.setCurrentDateTurnOver(bucketData.getCurrentDateTurnOver() + Math.abs(transactionAmount.doubleValue()));
+            transactionAmount = transactionAmount.negate();
         }
         if (transactionScoreData.getTransactionEventType() == TransactionEventType.SENDER_NEW_ADDRESS_EVENT) {
             ConcurrentSkipListMap<LocalDate, BigDecimal> unlinkedAddressBalance = transactionScoreData.getUnlinkedAddressData().getDateToBalanceMap();
@@ -243,8 +243,8 @@ public class BucketTransactionScoreCalculator extends BucketScoresCalculator<Buc
 
                     if ((currentMonthBalanceEntry != null && !currentMonthBalanceEntry.getKey().isAfter(dayForBalance)) ||
                             (currentUnlinkedBalance != null && !currentUnlinkedBalance.getKey().isAfter(dayForBalance))) {
-                        BigDecimal newBalance = (currentMonthBalanceEntry != null) ? currentMonthBalanceEntry.getValue().getCount() : 0;
-                        newBalance = newBalance.add((currentUnlinkedBalance != null) ? currentUnlinkedBalance.getValue() : 0);
+                        BigDecimal newBalance = (currentMonthBalanceEntry != null) ? currentMonthBalanceEntry.getValue().getCount() : BigDecimal.ZERO;
+                        newBalance = newBalance.add((currentUnlinkedBalance != null) ? currentUnlinkedBalance.getValue() : BigDecimal.ZERO);
                         currentMonthBalanceMap.put(dayForBalance, new BalanceAndContribution(newBalance, 0));
                     }
                 }
@@ -255,18 +255,18 @@ public class BucketTransactionScoreCalculator extends BucketScoresCalculator<Buc
         if (transactionScoreData.getUserType() != UserType.FULL_NODE && transactionScoreData.getUserType() != UserType.DSP_NODE && transactionScoreData.getUserType() != UserType.TRUST_SCORE_NODE) {
             if (currentMonthBalanceMap.containsKey(eventDate)) {
                 currentMonthBalanceMap.put(eventDate,
-                        new BalanceAndContribution(currentMonthBalanceMap.get(eventDate).getCount() + transactionAmount, 0));
+                        new BalanceAndContribution(currentMonthBalanceMap.get(eventDate).getCount().add(transactionAmount), 0));
             } else {
-                double previousBalance = 0;
+                BigDecimal previousBalance = BigDecimal.ZERO;
                 if (!currentMonthBalanceMap.isEmpty()) {
                     LocalDate lastDayWithChangeInBalance = Collections.max(currentMonthBalanceMap.keySet());
                     previousBalance = currentMonthBalanceMap.get(lastDayWithChangeInBalance).getCount();
                 }
-                currentMonthBalanceMap.put(eventDate, new BalanceAndContribution(transactionAmount + previousBalance, 0));
+                currentMonthBalanceMap.put(eventDate, new BalanceAndContribution(transactionAmount.add(previousBalance), 0));
             }
             if (currentMonthBalanceMap.containsKey(nextDate)) {
                 currentMonthBalanceMap.put(nextDate,
-                        new BalanceAndContribution(currentMonthBalanceMap.get(nextDate).getCount() + transactionAmount, 0));
+                        new BalanceAndContribution(currentMonthBalanceMap.get(nextDate).getCount().add(transactionAmount), 0));
             }
         }
     }

@@ -46,6 +46,7 @@ import java.time.LocalDate;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Consumer;
 
 import static io.coti.basenode.http.BaseNodeHttpStringConstants.STATUS_ERROR;
@@ -112,6 +113,9 @@ public class TrustScoreService {
 
     private List<IBucketService> bucketScoreServiceList;
     private RulesData rulesData;
+    private Map<Hash, Hash> lockUnlinkedAddressesHashMap = new ConcurrentHashMap<>();
+    private Map<Hash, Hash> lockUserTrustScoresHashMap = new ConcurrentHashMap<>();
+    private Map<Hash, Hash> lockBucketsHashMap = new ConcurrentHashMap<>();
 
     @PostConstruct
     private void init() {
@@ -736,21 +740,26 @@ public class TrustScoreService {
                             log.error("Transaction can not be added to balance TS calculation: User {} doesn't exist", addressUserIndexData.getUserHash());
                         }
                     } else {
-                        UnlinkedAddressData unlinkedAddressData = unlinkedAddresses.getByHash(baseTransactionData.getAddressHash());
-                        if (unlinkedAddressData == null) {
-                            unlinkedAddressData = new UnlinkedAddressData(baseTransactionData.getAddressHash());
+                        synchronized ((addLockToLockMap(lockUnlinkedAddressesHashMap, baseTransactionData.getAddressHash()))) {
+                            UnlinkedAddressData unlinkedAddressData = unlinkedAddresses.getByHash(baseTransactionData.getAddressHash());
+                            if (unlinkedAddressData == null) {
+                                unlinkedAddressData = new UnlinkedAddressData(baseTransactionData.getAddressHash());
+                            }
+                            unlinkedAddressData.insertToDateToBalanceMap(transactionScoreData, baseTransactionData.getAmount());
+                            unlinkedAddresses.put(unlinkedAddressData);
+                            removeLockFromLocksMap(lockUnlinkedAddressesHashMap, baseTransactionData.getAddressHash());
                         }
-                        unlinkedAddressData.insertToDateToBalanceMap(transactionScoreData, baseTransactionData.getAmount());
-                        unlinkedAddresses.put(unlinkedAddressData);
                     }
                 } else if (baseTransactionData instanceof InputBaseTransactionData) {
-                    UnlinkedAddressData unlinkedAddressData = unlinkedAddresses.getByHash(baseTransactionData.getAddressHash());
-
-                    if (unlinkedAddressData != null) {
-                        AddressUserIndexData addressUserIndexData = new AddressUserIndexData(baseTransactionData.getAddressHash(), userTrustScoreData.getHash());
-                        addressUserIndex.put(addressUserIndexData);
-                        transactionScoreData.SetUnlinkedAddressData(unlinkedAddressData);
-                        unlinkedAddresses.delete(unlinkedAddressData);
+                    synchronized ((addLockToLockMap(lockUnlinkedAddressesHashMap, baseTransactionData.getAddressHash()))) {
+                        UnlinkedAddressData unlinkedAddressData = unlinkedAddresses.getByHash(baseTransactionData.getAddressHash());
+                        if (unlinkedAddressData != null) {
+                            AddressUserIndexData addressUserIndexData = new AddressUserIndexData(baseTransactionData.getAddressHash(), userTrustScoreData.getHash());
+                            addressUserIndex.put(addressUserIndexData);
+                            transactionScoreData.SetUnlinkedAddressData(unlinkedAddressData);
+                            unlinkedAddresses.delete(unlinkedAddressData);
+                            removeLockFromLocksMap(lockUnlinkedAddressesHashMap, baseTransactionData.getAddressHash());
+                        }
                     }
                 }
             }
@@ -795,6 +804,22 @@ public class TrustScoreService {
 
     private boolean changingIsLegal(UserTrustScoreData userTrustScoreData) {
         return userTrustScoreData.getUserType().equals(UserType.CONSUMER);
+    }
+
+    private Hash addLockToLockMap(Map<Hash, Hash> locksIdentityMap, Hash hash) {
+        synchronized (locksIdentityMap) {
+            locksIdentityMap.putIfAbsent(hash, hash);
+            return locksIdentityMap.get(hash);
+        }
+    }
+
+    private void removeLockFromLocksMap(Map<Hash, Hash> locksIdentityMap, Hash hash) {
+        synchronized (locksIdentityMap) {
+            Hash hashLock = locksIdentityMap.get(hash);
+            if (hashLock != null) {
+                locksIdentityMap.remove(hash);
+            }
+        }
     }
 
 
