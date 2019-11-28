@@ -16,7 +16,7 @@ public class UnlinkedAddressData implements IEntity {
 
     private static final long serialVersionUID = -7404291182897047913L;
     private Hash address;
-    private ConcurrentSkipListMap<LocalDate, Double> dateToBalanceMap;
+    private ConcurrentSkipListMap<LocalDate, BigDecimal> dateToBalanceMap;
     private boolean zeroTrustFlag;
 
     public UnlinkedAddressData(Hash address) {
@@ -30,31 +30,31 @@ public class UnlinkedAddressData implements IEntity {
         LocalDate nextDate = transactionDate.plusDays(1);
 
         if (!dateToBalanceMap.isEmpty() && dateToBalanceMap.containsKey(transactionDate)) {
-            dateToBalanceMap.put(transactionDate, dateToBalanceMap.get(transactionDate) + amount.doubleValue());
+            dateToBalanceMap.put(transactionDate, dateToBalanceMap.get(transactionDate).add(amount));
         } else {
-            ConcurrentSkipListMap.Entry<LocalDate, Double> previous;
+            ConcurrentSkipListMap.Entry<LocalDate, BigDecimal> previous;
             previous = dateToBalanceMap.lowerEntry(transactionDate);
             if (previous != null) {
-                dateToBalanceMap.put(transactionDate, previous.getValue() + amount.doubleValue());
+                dateToBalanceMap.put(transactionDate, previous.getValue().add(amount));
             } else {
-                dateToBalanceMap.put(transactionDate, amount.doubleValue());
+                dateToBalanceMap.put(transactionDate, amount);
             }
         }
         if (!dateToBalanceMap.isEmpty() && dateToBalanceMap.containsKey(nextDate)) {
-            dateToBalanceMap.put(nextDate, dateToBalanceMap.get(nextDate) + amount.doubleValue());
+            dateToBalanceMap.put(nextDate, dateToBalanceMap.get(nextDate).add(amount));
         }
     }
 
-    public void insertToDateToBalanceMap(LocalDate transactionDate, double amount) {
+    public void insertToDateToBalanceMap(LocalDate transactionDate, BigDecimal amount) {
         LocalDate nextDate = transactionDate.plusDays(1);
 
         if (!dateToBalanceMap.isEmpty() && dateToBalanceMap.containsKey(transactionDate)) {
-            dateToBalanceMap.put(transactionDate, dateToBalanceMap.get(transactionDate) + amount);
+            dateToBalanceMap.put(transactionDate, dateToBalanceMap.get(transactionDate).add(amount));
         } else {
             dateToBalanceMap.put(transactionDate, amount);
         }
         if (!dateToBalanceMap.isEmpty() && dateToBalanceMap.containsKey(nextDate)) {
-            dateToBalanceMap.put(nextDate, dateToBalanceMap.get(nextDate) + amount);
+            dateToBalanceMap.put(nextDate, dateToBalanceMap.get(nextDate).add(amount));
         }
     }
 

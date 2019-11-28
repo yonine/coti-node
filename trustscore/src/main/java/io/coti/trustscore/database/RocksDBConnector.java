@@ -9,18 +9,20 @@ import io.coti.trustscore.data.Buckets.BucketInitialTrustScoreEventsData;
 import io.coti.trustscore.data.Buckets.BucketTransactionEventsData;
 import io.coti.trustscore.data.Enums.InitialTrustScoreType;
 import io.coti.trustscore.data.Enums.UserType;
-import io.coti.trustscore.data.TrustScoreData;
-import io.coti.trustscore.data.UserTrustScoreData;
-import io.coti.trustscore.data.parameters.TransactionUserParameters;
-import io.coti.trustscore.data.tsbuckets.*;
-import io.coti.trustscore.data.tsenums.FinalEventType;
-import io.coti.trustscore.data.tsenums.EventType;
-import io.coti.trustscore.data.tsevents.KYCDocumentEventData;
 import io.coti.trustscore.data.Events.BalanceCountAndContribution;
 import io.coti.trustscore.data.Events.InitialTrustScoreData;
+import io.coti.trustscore.data.TrustScoreData;
+import io.coti.trustscore.data.UserTrustScoreData;
 import io.coti.trustscore.data.contributiondata.BalanceAndContribution;
 import io.coti.trustscore.data.contributiondata.DocumentDecayedContributionData;
+import io.coti.trustscore.data.parameters.TransactionUserParameters;
 import io.coti.trustscore.data.parameters.UserParameters;
+import io.coti.trustscore.data.tsbuckets.BucketData;
+import io.coti.trustscore.data.tsbuckets.BucketDocumentEventData;
+import io.coti.trustscore.data.tsbuckets.BucketTransactionEventData;
+import io.coti.trustscore.data.tsenums.EventType;
+import io.coti.trustscore.data.tsenums.FinalEventType;
+import io.coti.trustscore.data.tsevents.KYCDocumentEventData;
 import io.coti.trustscore.model.*;
 import io.coti.trustscore.utils.DatesCalculation;
 import lombok.extern.slf4j.Slf4j;
@@ -34,6 +36,7 @@ import org.springframework.util.SerializationUtils;
 
 import java.lang.reflect.Constructor;
 import java.lang.reflect.InvocationTargetException;
+import java.math.BigDecimal;
 import java.nio.ByteBuffer;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -266,9 +269,11 @@ public class RocksDBConnector extends BaseNodeRocksDBConnector {
             DocumentDecayedContributionData documentDecayedContributionData;
 
             TransactionUserParameters userParameters = userParametersAdHoc(userTrustScoreData.getUserType().toString());
-            LocalDate lastUpdate = LocalDate.of(bucketInitialTrustScoreEventsData.getLastUpdate().getYear()+1900,
-                    bucketInitialTrustScoreEventsData.getLastUpdate().getMonth()+1, bucketInitialTrustScoreEventsData.getLastUpdate().getDate());
-            if (lastUpdate == null) { lastUpdate =  trustScoreDataCreateDate; }
+            LocalDate lastUpdate = LocalDate.of(bucketInitialTrustScoreEventsData.getLastUpdate().getYear() + 1900,
+                    bucketInitialTrustScoreEventsData.getLastUpdate().getMonth() + 1, bucketInitialTrustScoreEventsData.getLastUpdate().getDate());
+            if (lastUpdate == null) {
+                lastUpdate = trustScoreDataCreateDate;
+            }
             int dateDiff = (int) ChronoUnit.DAYS.between(trustScoreDataCreateDate, lastUpdate);
             if (initialTrustScoreData != null) {
                 documentDecayedContributionData = new DocumentDecayedContributionData(
@@ -311,12 +316,12 @@ public class RocksDBConnector extends BaseNodeRocksDBConnector {
             LocalDate maxOldDate = null;
             double sumCurrentMonthBalanceContribution = 0;
             double sumOldMonthBalanceContribution = 0;
-            Double lastOldCount = null;
+            BigDecimal lastOldCount = null;
             LocalDate todayDate = LocalDate.now(ZoneOffset.UTC);
 
-            if (userParameters.getBalanceSemiDecay() != 0){  // so excluding nodes
+            if (userParameters.getBalanceSemiDecay() != 0) {  // so excluding nodes
                 for (Map.Entry<Date, BalanceCountAndContribution> entry : bucketTransactionEventsData.getCurrentMonthDayToBalanceCountAndContribution().entrySet()) {
-                    LocalDate currentDate = LocalDate.of(entry.getKey().getYear()+1900, entry.getKey().getMonth()+1, entry.getKey().getDate());
+                    LocalDate currentDate = LocalDate.of(entry.getKey().getYear() + 1900, entry.getKey().getMonth() + 1, entry.getKey().getDate());
                     int daysDiff = (int) ChronoUnit.DAYS.between(currentDate, todayDate);
                     double dailyScore = DatesCalculation.calculateDecay(userParameters.getBalanceSemiDecay(), Math.tanh(entry.getValue().getCount() /
                             userParameters.getBalanceLevel08() * UserParameters.atanh08), daysDiff);
@@ -324,27 +329,26 @@ public class RocksDBConnector extends BaseNodeRocksDBConnector {
                         sumOldMonthBalanceContribution += dailyScore;
                         if (maxOldDate == null) {
                             maxOldDate = currentDate;
-                            lastOldCount = entry.getValue().getCount();
+                            lastOldCount = BigDecimal.valueOf(entry.getValue().getCount());
+                        } else {
+                            if (maxOldDate.isBefore(currentDate)) {
+                                maxOldDate = currentDate;
+                            }
                         }
-                        else {
-                            if (maxOldDate.isBefore(currentDate)) {maxOldDate = currentDate;}
-                        }
-                    }
-                    else {
+                    } else {
                         bucketTransactionEventData.getCurrentMonthDayToBalanceCountAndContribution().put(
-                                currentDate, new BalanceAndContribution(entry.getValue().getCount(), dailyScore));
+                                currentDate, new io.coti.trustscore.data.contributiondata.BalanceAndContribution(BigDecimal.valueOf(entry.getValue().getCount()), dailyScore));
                         sumCurrentMonthBalanceContribution += dailyScore;
                     }
                 }
 
-                if (lastOldCount != null || !bucketTransactionEventData.getCurrentMonthDayToBalanceCountAndContribution().isEmpty()){
-                    for (LocalDate currentDate = todayDate.minusDays(30); !currentDate.isAfter(todayDate); currentDate = currentDate.plusDays(1)){
-                        if(bucketTransactionEventData.getCurrentMonthDayToBalanceCountAndContribution().containsKey(currentDate)){
+                if (lastOldCount != null || !bucketTransactionEventData.getCurrentMonthDayToBalanceCountAndContribution().isEmpty()) {
+                    for (LocalDate currentDate = todayDate.minusDays(30); !currentDate.isAfter(todayDate); currentDate = currentDate.plusDays(1)) {
+                        if (bucketTransactionEventData.getCurrentMonthDayToBalanceCountAndContribution().containsKey(currentDate)) {
                             lastOldCount = bucketTransactionEventData.getCurrentMonthDayToBalanceCountAndContribution().get(currentDate).getCount();
-                        }
-                        else if (lastOldCount != null) {
+                        } else if (lastOldCount != null) {
                             int daysDiff = (int) ChronoUnit.DAYS.between(currentDate, todayDate);
-                            double dailyScore = DatesCalculation.calculateDecay(userParameters.getBalanceSemiDecay(), Math.tanh(lastOldCount /
+                            double dailyScore = DatesCalculation.calculateDecay(userParameters.getBalanceSemiDecay(), Math.tanh(lastOldCount.doubleValue() /
                                     userParameters.getBalanceLevel08() * UserParameters.atanh08), daysDiff);
                             bucketTransactionEventData.getCurrentMonthDayToBalanceCountAndContribution().put(
                                     currentDate, new BalanceAndContribution(lastOldCount, dailyScore));

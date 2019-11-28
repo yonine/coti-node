@@ -1,8 +1,8 @@
 package io.coti.trustscore.data.tsbuckets;
 
 import io.coti.basenode.data.interfaces.IEntity;
-import io.coti.trustscore.data.tsevents.TransactionEventData;
 import io.coti.trustscore.data.contributiondata.BalanceAndContribution;
+import io.coti.trustscore.data.tsevents.TransactionEventData;
 import lombok.Data;
 
 import java.time.LocalDate;

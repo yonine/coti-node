@@ -27,7 +27,7 @@ public class ClusterStampService extends BaseNodeClusterStampService {
     public void continueUpdateBalanceFromClusterStamp(Hash addressHash, BigDecimal addressAmount) {
         if (unlinkedAddresses.getByHash(addressHash) == null && addressUserIndex.getByHash(addressHash) == null) {
             UnlinkedAddressData unlinkedAddressData = new UnlinkedAddressData(addressHash);
-            unlinkedAddressData.insertToDateToBalanceMap(LocalDate.now(ZoneOffset.UTC), addressAmount.doubleValue());
+            unlinkedAddressData.insertToDateToBalanceMap(LocalDate.now(ZoneOffset.UTC), addressAmount);
             unlinkedAddresses.put(unlinkedAddressData);
         }
     }

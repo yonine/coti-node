@@ -21,7 +21,10 @@ import io.coti.trustscore.data.tsenums.EventType;
 import io.coti.trustscore.data.tsenums.UserType;
 import io.coti.trustscore.data.tsevents.*;
 import io.coti.trustscore.http.*;
-import io.coti.trustscore.model.*;
+import io.coti.trustscore.model.AddressUserIndex;
+import io.coti.trustscore.model.Buckets;
+import io.coti.trustscore.model.UnlinkedAddresses;
+import io.coti.trustscore.model.UserTrustScores;
 import io.coti.trustscore.services.interfaces.IBucketService;
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
@@ -45,7 +48,7 @@ import java.time.ZoneOffset;
 import java.util.*;
 import java.util.function.Consumer;
 
-import static io.coti.basenode.http.BaseNodeHttpStringConstants.*;
+import static io.coti.basenode.http.BaseNodeHttpStringConstants.STATUS_ERROR;
 import static io.coti.trustscore.http.HttpStringConstants.*;
 
 @Slf4j
@@ -75,8 +78,6 @@ public class TrustScoreService {
     @Autowired
     private InsertDepositBalanceBasedScoreCrypto insertDepositBalanceBasedScoreCrypto;
 
-    @Autowired
-    private TrustScores trustScores;
     @Autowired
     private UserTrustScores userTrustScores;
     @Autowired

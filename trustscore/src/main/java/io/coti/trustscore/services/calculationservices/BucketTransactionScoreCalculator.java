@@ -10,6 +10,7 @@ import io.coti.trustscore.data.parameters.UserParameters;
 import io.coti.trustscore.services.BucketTransactionScoreService;
 import io.coti.trustscore.utils.DatesCalculation;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
 import java.time.temporal.ChronoUnit;
@@ -204,9 +205,9 @@ public class BucketTransactionScoreCalculator extends BucketScoresCalculator<Buc
             transactionAmount = -transactionAmount;
         }
         if (transactionScoreData.getTransactionEventType() == TransactionEventType.SENDER_NEW_ADDRESS_EVENT) {
-            ConcurrentSkipListMap<LocalDate, Double> unlinkedAddressBalance = transactionScoreData.getUnlinkedAddressData().getDateToBalanceMap();
+            ConcurrentSkipListMap<LocalDate, BigDecimal> unlinkedAddressBalance = transactionScoreData.getUnlinkedAddressData().getDateToBalanceMap();
             if (!unlinkedAddressBalance.isEmpty()) {
-                Map.Entry<LocalDate, Double> currentUnlinkedBalance = unlinkedAddressBalance.firstEntry();
+                Map.Entry<LocalDate, BigDecimal> currentUnlinkedBalance = unlinkedAddressBalance.firstEntry();
                 Map.Entry<LocalDate, BalanceAndContribution> currentMonthBalanceEntry;
                 LocalDate todayDate = LocalDate.now(ZoneOffset.UTC);
                 LocalDate startDate;
@@ -242,8 +243,8 @@ public class BucketTransactionScoreCalculator extends BucketScoresCalculator<Buc
 
                     if ((currentMonthBalanceEntry != null && !currentMonthBalanceEntry.getKey().isAfter(dayForBalance)) ||
                             (currentUnlinkedBalance != null && !currentUnlinkedBalance.getKey().isAfter(dayForBalance))) {
-                        double newBalance = (currentMonthBalanceEntry != null) ? currentMonthBalanceEntry.getValue().getCount() : 0;
-                        newBalance += (currentUnlinkedBalance != null) ? currentUnlinkedBalance.getValue() : 0;
+                        BigDecimal newBalance = (currentMonthBalanceEntry != null) ? currentMonthBalanceEntry.getValue().getCount() : 0;
+                        newBalance = newBalance.add((currentUnlinkedBalance != null) ? currentUnlinkedBalance.getValue() : 0);
                         currentMonthBalanceMap.put(dayForBalance, new BalanceAndContribution(newBalance, 0));
                     }
                 }
