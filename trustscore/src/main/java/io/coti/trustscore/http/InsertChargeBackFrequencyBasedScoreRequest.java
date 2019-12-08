@@ -8,11 +8,10 @@ import java.math.BigDecimal;
 
 @Data
 public class InsertChargeBackFrequencyBasedScoreRequest extends SignedRequest {
-    private static final long serialVersionUID = -2115495911453522146L;
     @NotNull
-    public Hash eventIdentifier;
+    private Hash eventIdentifier;
     @NotNull
-    public Hash transactionHash;
+    private Hash transactionHash;
     @NotNull
-    public BigDecimal amount;
+    private BigDecimal amount;
 }

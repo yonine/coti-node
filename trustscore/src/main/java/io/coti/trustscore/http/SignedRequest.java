@@ -11,11 +11,10 @@ import javax.validation.constraints.NotNull;
 
 @Data
 public class SignedRequest extends Request implements ISignValidatable {
-    private static final long serialVersionUID = -2883375880220246016L;
     @NotNull
-    public Hash userHash;
+    private Hash userHash;
     @NotNull
-    public @Valid SignatureData signature;
+    private @Valid SignatureData signature;
 
     private Hash signerHash;
 

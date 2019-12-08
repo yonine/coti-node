@@ -7,7 +7,6 @@ import lombok.Data;
 
 @Data
 public class PurgeUserResponse extends BaseResponse {
-    private static final long serialVersionUID = -2669848042023037998L;
     private String userHash;
 
     public PurgeUserResponse(Hash userHash) {

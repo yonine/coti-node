@@ -11,8 +11,6 @@ import javax.validation.constraints.NotNull;
 
 @Data
 public class SetUserTypeRequest extends SignedRequest{
-
-    private static final long serialVersionUID = -4651323426356453376L;
     @NotNull
     public String userType;
 

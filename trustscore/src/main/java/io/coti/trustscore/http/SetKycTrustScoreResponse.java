@@ -7,7 +7,6 @@ import lombok.Data;
 
 @Data
 public class SetKycTrustScoreResponse extends BaseResponse {
-    private static final long serialVersionUID = 8642754673540015885L;
     private String userHash;
     private double kycTrustScore;
 

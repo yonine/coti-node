@@ -5,7 +5,6 @@ import lombok.Data;
 
 @Data
 public class InsertDebtBalanceBasedScoreResponse extends BaseResponse {
-    private static final long serialVersionUID = -1549438005623558177L;
     private String userHash;
     private String eventType;
     private String amount;

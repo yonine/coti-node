@@ -19,9 +19,8 @@ public class HttpStringConstants extends BaseNodeHttpStringConstants {
     public static final String INSERT_DOCUMENT_AUTHENTICATION_ERROR = "Adding Document Score Authentication Failed";
     public static final String INSERT_EVENT_AUTHENTICATION_ERROR = "Adding Event Score Authentication Failed";
     public static final String EVENT_EXIST = "Event Already Exist";
+    public static final String ERROR_CREATING_BUCKETS = "Error Creating Buckets";
 
-    public static final String ILLEGAL_EVENT_FROM_KYC_SERVER = "ILLEGAL_EVENT_FROM_KYC_SERVER";
-    public static final String TRUST_SCORE_EVENT_AUTHENTICATION_ERROR = "Event Trust Score Authentication Failed";
     public static final String SET_USER_TYPE_AUTHENTICATION_ERROR = "Set user type Authentication Failed";
     public static final String UNKNOWN_SIGNER_ERROR = "The Signer Of The Request Is Not Acceptable";
     public static final String BAD_SIGNATURE_ON_TRUST_SCORE_FOR_TRANSACTION = "Event Trust Score Authentication Failed";

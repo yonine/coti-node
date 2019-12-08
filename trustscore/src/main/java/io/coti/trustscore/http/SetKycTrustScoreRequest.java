@@ -10,9 +10,8 @@ import javax.validation.constraints.NotNull;
 
 @Data
 public class SetKycTrustScoreRequest extends SignedRequest {
-    private static final long serialVersionUID = -1016176727037169880L;
     @NotNull
-    public String userType;
+    private String userType;
     @NotNull
-    public double kycTrustScore;
+    private double kycTrustScore;
 }

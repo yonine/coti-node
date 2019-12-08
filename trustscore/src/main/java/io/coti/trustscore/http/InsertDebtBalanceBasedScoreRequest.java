@@ -9,13 +9,12 @@ import java.math.BigDecimal;
 
 @Data
 public class InsertDebtBalanceBasedScoreRequest extends SignedRequest {
-    private static final long serialVersionUID = 3578558707689546957L;
     @NotNull
-    public DebtBalanceBasedEventRequestType eventType;
+    private DebtBalanceBasedEventRequestType eventType;
     @NotNull
-    public BigDecimal amount;
+    private BigDecimal amount;
     @NotNull
-    public Hash eventIdentifier;
+    private Hash eventIdentifier;
     @NotNull
-    public Hash otherUserHash;
+    private Hash otherUserHash;
 }

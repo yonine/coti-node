@@ -5,7 +5,6 @@ import lombok.Data;
 
 @Data
 public class InsertDocumentScoreResponse extends BaseResponse {
-    private static final long serialVersionUID = -2744430344053290336L;
     private String userHash;
     private String documentType;
     private double score;

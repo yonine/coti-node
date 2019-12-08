@@ -7,9 +7,8 @@ import javax.validation.constraints.NotNull;
 
 @Data
 public class InsertDocumentScoreRequest extends SignedRequest {
-    private static final long serialVersionUID = 9154754970965594479L;
     @NotNull
-    public DocumentRequestType documentType;
+    private DocumentRequestType documentType;
     @NotNull
-    public double score;
+    private double score;
 }

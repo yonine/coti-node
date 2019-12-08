@@ -5,7 +5,6 @@ import lombok.Data;
 
 @Data
 public class InsertEventScoreResponse extends BaseResponse {
-    private static final long serialVersionUID = 601252520554001209L;
     private String userHash;
     private String eventType;
     private String eventIdentifier;

@@ -7,7 +7,6 @@ import lombok.Data;
 
 @Data
 public class SetUserTypeResponse extends BaseResponse {
-    private static final long serialVersionUID = -4837624533867863156L;
     private String userType;
     private String userHash;
 

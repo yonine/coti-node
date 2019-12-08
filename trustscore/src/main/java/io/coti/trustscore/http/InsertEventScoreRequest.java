@@ -8,9 +8,8 @@ import javax.validation.constraints.NotNull;
 
 @Data
 public class InsertEventScoreRequest extends SignedRequest {
-    private static final long serialVersionUID = -7542519785532048314L;
     @NotNull
-    public EventRequestType eventType;
+    private EventRequestType eventType;
     @NotNull
-    public Hash eventIdentifier;
+    private Hash eventIdentifier;
 }

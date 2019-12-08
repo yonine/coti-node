@@ -8,9 +8,7 @@ import javax.validation.constraints.NotNull;
 
 @Data
 public class PurgeUserRequest extends Request {
-
-    private static final long serialVersionUID = -7955142018630882110L;
     @NotNull
-    public Hash userHash;
+    private Hash userHash;
 }
 

@@ -9,7 +9,6 @@ import java.util.List;
 
 @Data
 public class GetUserTrustScoreComponentsResponse extends BaseResponse {
-    private static final long serialVersionUID = 3005418696077773256L;
     private UserTrustScoreData userTrustScoreData;
     private List<BucketData> bucketEventDataList;
 

@@ -5,7 +5,6 @@ import lombok.Data;
 
 @Data
 public class InsertChargeBackFrequencyBasedScoreResponse extends BaseResponse {
-    private static final long serialVersionUID = 4955685749215120336L;
     private String userHash;
     private String eventIdentifier;
     private String transactionHash;

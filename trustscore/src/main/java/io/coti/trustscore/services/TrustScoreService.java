@@ -115,7 +115,6 @@ public class TrustScoreService {
     private RulesData rulesData;
     private Map<Hash, Hash> lockUnlinkedAddressesHashMap = new ConcurrentHashMap<>();
     private Map<Hash, Hash> lockUserTrustScoresHashMap = new ConcurrentHashMap<>();
-    private Map<Hash, Hash> lockBucketsHashMap = new ConcurrentHashMap<>();
 
     @PostConstruct
     private void init() {
@@ -155,194 +154,182 @@ public class TrustScoreService {
         SetKycTrustScoreResponse kycTrustScoreResponse;
 
         try {
-            log.info("Setting KYC trust score: userHash =  {}, KTS = {}, userType =  {}", request.userHash, request.kycTrustScore, request.userType);
-            if (request.kycTrustScore <= 0 || request.kycTrustScore > 100) {
-                return ResponseEntity
-                        .status(HttpStatus.BAD_REQUEST)
-                        .body(new Response(KYC_TRUST_INCORRECT_VALUE, STATUS_ERROR));
+            log.info("Setting KYC trust score: userHash =  {}, KTS = {}, userType =  {}", request.getUserHash(), request.getKycTrustScore(), request.getUserType());
+            if (request.getKycTrustScore() <= 0 || request.getKycTrustScore() > 100) {
+                return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(new Response(KYC_TRUST_INCORRECT_VALUE, STATUS_ERROR));
             }
             if (!checkIfSignerInList(request.getSignerHash())) {
-                return ResponseEntity
-                        .status(HttpStatus.UNAUTHORIZED)
-                        .body(new Response(UNKNOWN_SIGNER_ERROR, STATUS_ERROR));
+                return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(new Response(UNKNOWN_SIGNER_ERROR, STATUS_ERROR));
             }
             if (!setKycTrustScoreCrypto.verifySignature(request)) {
-                return ResponseEntity
-                        .status(HttpStatus.UNAUTHORIZED)
-                        .body(new Response(KYC_TRUST_SCORE_AUTHENTICATION_ERROR, STATUS_ERROR));
+                return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(new Response(KYC_TRUST_SCORE_AUTHENTICATION_ERROR, STATUS_ERROR));
             }
 
-            UserTrustScoreData oldUserTrustScoreData = userTrustScores.getByHash(request.userHash);
-            if (oldUserTrustScoreData == null) {
-                UserTrustScoreData newUserTrustScoreData = new UserTrustScoreData(request.userHash,
-                        UserType.enumFromString(request.userType));
-                createBuckets(newUserTrustScoreData);
-                userTrustScores.put(newUserTrustScoreData);
-            } else {
-                if (!oldUserTrustScoreData.getUserType().equals(UserType.enumFromString(request.userType))) {
-                    return ResponseEntity
-                            .status(HttpStatus.BAD_REQUEST)
-                            .body(new Response(KYC_TRUST_DIFFERENT_TYPE, STATUS_ERROR));
+            UserType userType = UserType.enumFromString(request.getUserType());
+            ResponseEntity badResponse = null;
+            synchronized ((addLockToLockMap(lockUserTrustScoresHashMap, request.getUserHash()))) {
+                UserTrustScoreData oldUserTrustScoreData = userTrustScores.getByHash(request.getUserHash());
+                if (oldUserTrustScoreData == null) {
+                    UserTrustScoreData newUserTrustScoreData = new UserTrustScoreData(request.getUserHash(), userType);
+                    if (!createBuckets(newUserTrustScoreData)) {
+                        badResponse = ResponseEntity.status(HttpStatus.BAD_REQUEST).body(new Response(ERROR_CREATING_BUCKETS, STATUS_ERROR));
+                    } else {
+                        userTrustScores.put(newUserTrustScoreData);
+                    }
+                } else {
+                    if (!oldUserTrustScoreData.getUserType().equals(userType)) {
+                        badResponse = ResponseEntity.status(HttpStatus.BAD_REQUEST).body(new Response(KYC_TRUST_DIFFERENT_TYPE, STATUS_ERROR));
+                    } else {
+                        BucketData oldUserBucketData = (BucketData) buckets.getByHash(getBucketHashByUserHashAndScoreType(request.getUserHash(), EventType.DOCUMENT_SCORE));
+                        KYCDocumentEventData kYCDocumentScoreData = new KYCDocumentEventData(request);
+                        oldUserBucketData.addScoreToBucketMap(kYCDocumentScoreData);
+                        bucketDocumentScoreService.addScoreToCalculations(kYCDocumentScoreData, (BucketDocumentEventData) oldUserBucketData);
+                        buckets.put(oldUserBucketData);
+                    }
+                }
+                if(badResponse == null) {
+                    insertFillQuestionnaireEvent(request.getUserHash(), DocumentRequestType.KYC);
+                    removeLockFromLocksMap(lockUserTrustScoresHashMap, request.getUserHash());
                 }
             }
 
-            KYCDocumentEventData kYCDocumentScoreData = new KYCDocumentEventData(request);
-            BucketData bucketData = (BucketData) buckets.getByHash(getBucketHashByUserHashAndScoreType(request.userHash, EventType.DOCUMENT_SCORE));
-            bucketData.addScoreToBucketMap(kYCDocumentScoreData);
-            bucketDocumentScoreService.addScoreToCalculations(kYCDocumentScoreData, (BucketDocumentEventData) bucketData);
-            buckets.put(bucketData);
-
-            kycTrustScoreResponse = new SetKycTrustScoreResponse(request.userHash.toHexString(), request.getKycTrustScore());
-
-            insertFillQuestionnaireEvent(request.userHash, DocumentRequestType.KYC);
-
-            return ResponseEntity.status(HttpStatus.OK)
-                    .body(kycTrustScoreResponse);
+            if(badResponse != null){
+                return badResponse;
+            }
+            kycTrustScoreResponse = new SetKycTrustScoreResponse(request.getUserHash().toHexString(), request.getKycTrustScore());
+            return ResponseEntity.status(HttpStatus.OK).body(kycTrustScoreResponse);
         } catch (Exception e) {
             log.error(e.getMessage());
-            return ResponseEntity
-                    .status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body(new Response(KYC_TRUST_SCORE_ERROR, STATUS_ERROR));
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(new Response(KYC_TRUST_SCORE_ERROR, STATUS_ERROR));
         }
     }
 
     public ResponseEntity<IResponse> insertDocumentScore(InsertDocumentScoreRequest request) {
+        if (!checkIfSignerInList(request.getSignerHash())) {
+            return ResponseEntity
+                    .status(HttpStatus.UNAUTHORIZED)
+                    .body(new Response(UNKNOWN_SIGNER_ERROR, STATUS_ERROR));
+        }
+        if (!insertDocumentScoreCrypto.verifySignature(request)) {
+            return ResponseEntity
+                    .status(HttpStatus.UNAUTHORIZED)
+                    .body(new Response(INSERT_DOCUMENT_AUTHENTICATION_ERROR, STATUS_ERROR));
+        }
+
+        DocumentEventData documentScoreData = null;
         try {
-            if (!checkIfSignerInList(request.getSignerHash())) {
-                return ResponseEntity
-                        .status(HttpStatus.UNAUTHORIZED)
-                        .body(new Response(UNKNOWN_SIGNER_ERROR, STATUS_ERROR));
-            }
-            if (!insertDocumentScoreCrypto.verifySignature(request)) {
-                return ResponseEntity
-                        .status(HttpStatus.UNAUTHORIZED)
-                        .body(new Response(INSERT_DOCUMENT_AUTHENTICATION_ERROR, STATUS_ERROR));
-            }
-
-            DocumentEventData documentScoreData = (DocumentEventData) request.documentType.event.getDeclaredConstructor(InsertDocumentScoreRequest.class).newInstance(request);
-
-            BucketData bucketData = (BucketData) buckets.getByHash(getBucketHashByUserHashAndScoreType(request.userHash, EventType.DOCUMENT_SCORE));
-            bucketData.addScoreToBucketMap(documentScoreData);
-            bucketDocumentScoreService.addScoreToCalculations(documentScoreData, (BucketDocumentEventData) bucketData);
-            buckets.put(bucketData);
-
-            insertFillQuestionnaireEvent(request.userHash, request.getDocumentType());
-
-            InsertDocumentScoreResponse insertDocumentScoreResponse = new InsertDocumentScoreResponse(request.userHash.toHexString(),
-                    request.getDocumentType().toString(), request.getScore());
-            return ResponseEntity.status(HttpStatus.CREATED)
-                    .body(insertDocumentScoreResponse);
-
+            documentScoreData = (DocumentEventData) request.getDocumentType().event.getDeclaredConstructor(InsertDocumentScoreRequest.class).newInstance(request);
         } catch (Exception e) {
             log.error(e.getMessage());
-            return ResponseEntity
-                    .status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body(new Response(INSERT_DOCUMENT_SCORE_ERROR, STATUS_ERROR));
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(new Response(INSERT_DOCUMENT_SCORE_ERROR, STATUS_ERROR));
         }
+        synchronized ((addLockToLockMap(lockUserTrustScoresHashMap, request.getUserHash()))) {
+            BucketData bucketDataForDocument = (BucketData) buckets.getByHash(getBucketHashByUserHashAndScoreType(request.getUserHash(), EventType.DOCUMENT_SCORE));
+            bucketDataForDocument.addScoreToBucketMap(documentScoreData);
+            bucketDocumentScoreService.addScoreToCalculations(documentScoreData, (BucketDocumentEventData) bucketDataForDocument);
+            buckets.put(bucketDataForDocument);
+            insertFillQuestionnaireEvent(request.getUserHash(), request.getDocumentType());
+            removeLockFromLocksMap(lockUserTrustScoresHashMap, request.getUserHash());
+        }
+
+        InsertDocumentScoreResponse insertDocumentScoreResponse = new InsertDocumentScoreResponse(request.getUserHash().toHexString(),
+                request.getDocumentType().toString(), request.getScore());
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(insertDocumentScoreResponse);
+
     }
 
     public ResponseEntity<IResponse> insertEventScore(InsertEventScoreRequest request) {
-        try {
-            if (!checkIfSignerInList(request.getSignerHash())) {
-                return ResponseEntity
-                        .status(HttpStatus.UNAUTHORIZED)
-                        .body(new Response(UNKNOWN_SIGNER_ERROR, STATUS_ERROR));
-            }
-            if (!insertEventScoreCrypto.verifySignature(request)) {
-                return ResponseEntity
-                        .status(HttpStatus.UNAUTHORIZED)
-                        .body(new Response(INSERT_EVENT_AUTHENTICATION_ERROR, STATUS_ERROR));
-            }
-
-            if (request.eventType != EventRequestType.CLAIM) {
-                BehaviorEventData eventScoreData = (BehaviorEventData) request.eventType.event.getDeclaredConstructor(InsertEventScoreRequest.class).newInstance(request);
-                BucketData bucketData = (BucketData) buckets.getByHash(getBucketHashByUserHashAndScoreType(request.userHash, EventType.EVENT_SCORE));
-
-                if (bucketData.getEventDataHashToEventDataMap().get(request.eventIdentifier) != null) {
-                    return ResponseEntity
-                            .status(HttpStatus.BAD_REQUEST)
-                            .body(new Response(EVENT_EXIST, STATUS_ERROR));
-                }
-
-                bucketData.addScoreToBucketMap(eventScoreData);
-                bucketEventScoreService.addScoreToCalculations(eventScoreData, (BucketBehaviorEventData) bucketData);
-
-                buckets.put(bucketData);
-            } else {
-                FrequencyBasedEventData frequencyBasedScoreData = (FrequencyBasedEventData) request.eventType.event.getDeclaredConstructor(InsertEventScoreRequest.class).newInstance(request);
-                BucketData bucketData = (BucketData) buckets.getByHash(getBucketHashByUserHashAndScoreType(request.userHash, EventType.FREQUENCY_BASED_SCORE));
-
-                if (bucketData.getEventDataHashToEventDataMap().get(request.eventIdentifier) != null) {
-                    return ResponseEntity
-                            .status(HttpStatus.BAD_REQUEST)
-                            .body(new Response(EVENT_EXIST, STATUS_ERROR));
-                }
-
-                bucketData.addScoreToBucketMap(frequencyBasedScoreData);
-                bucketFrequencyBasedScoreService.addScoreToCalculations(frequencyBasedScoreData, (BucketFrequencyBasedEventData) bucketData);
-
-                buckets.put(bucketData);
-
-            }
-
-            InsertEventScoreResponse insertEventScoreResponse = new InsertEventScoreResponse(request.userHash.toHexString(),
-                    request.getEventType().toString(), request.getEventIdentifier().toHexString());
-            return ResponseEntity.status(HttpStatus.CREATED)
-                    .body(insertEventScoreResponse);
-        } catch (Exception e) {
-            log.error(e.getMessage());
-            return ResponseEntity
-                    .status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body(new Response(INSERT_EVENT_SCORE_ERROR, STATUS_ERROR));
+        if (!checkIfSignerInList(request.getSignerHash())) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(new Response(UNKNOWN_SIGNER_ERROR, STATUS_ERROR));
         }
+        if (!insertEventScoreCrypto.verifySignature(request)) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(new Response(INSERT_EVENT_AUTHENTICATION_ERROR, STATUS_ERROR));
+        }
+
+        ResponseEntity badResponse = null;
+        if (request.getEventType() != EventRequestType.CLAIM) {
+            BehaviorEventData eventClaimScoreData = null;
+            try {
+                eventClaimScoreData = (BehaviorEventData) request.getEventType().event.getDeclaredConstructor(InsertEventScoreRequest.class).newInstance(request);
+            } catch (Exception e) {
+                log.error(e.getMessage());
+                return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(new Response(INSERT_EVENT_SCORE_ERROR, STATUS_ERROR));
+            }
+            synchronized ((addLockToLockMap(lockUserTrustScoresHashMap, request.getUserHash()))) {
+                BucketData claimBucketData = (BucketData) buckets.getByHash(getBucketHashByUserHashAndScoreType(request.getUserHash(), EventType.EVENT_SCORE));
+                if (claimBucketData.getEventDataHashToEventDataMap().get(request.getEventIdentifier()) != null) {
+                    badResponse = ResponseEntity.status(HttpStatus.BAD_REQUEST).body(new Response(EVENT_EXIST, STATUS_ERROR));
+                } else {
+                    claimBucketData.addScoreToBucketMap(eventClaimScoreData);
+                    bucketEventScoreService.addScoreToCalculations(eventClaimScoreData, (BucketBehaviorEventData) claimBucketData);
+                    buckets.put(claimBucketData);
+                }
+            }
+            removeLockFromLocksMap(lockUserTrustScoresHashMap, request.getUserHash());
+        } else {
+            FrequencyBasedEventData frequencyBasedScoreData = null;
+            try {
+                frequencyBasedScoreData = (FrequencyBasedEventData) request.getEventType().event.getDeclaredConstructor(InsertEventScoreRequest.class).newInstance(request);
+            } catch (Exception e) {
+                log.error(e.getMessage());
+                return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(new Response(INSERT_EVENT_SCORE_ERROR, STATUS_ERROR));
+            }
+            synchronized ((addLockToLockMap(lockUserTrustScoresHashMap, request.getUserHash()))) {
+                BucketData frequencyBasedBucketData = (BucketData) buckets.getByHash(getBucketHashByUserHashAndScoreType(request.getUserHash(), EventType.FREQUENCY_BASED_SCORE));
+                if (frequencyBasedBucketData.getEventDataHashToEventDataMap().get(request.getEventIdentifier()) != null) {
+                    badResponse = ResponseEntity.status(HttpStatus.BAD_REQUEST).body(new Response(EVENT_EXIST, STATUS_ERROR));
+                } else {
+                    frequencyBasedBucketData.addScoreToBucketMap(frequencyBasedScoreData);
+                    bucketFrequencyBasedScoreService.addScoreToCalculations(frequencyBasedScoreData, (BucketFrequencyBasedEventData) frequencyBasedBucketData);
+                    buckets.put(frequencyBasedBucketData);
+                }
+            }
+            removeLockFromLocksMap(lockUserTrustScoresHashMap, request.getUserHash());
+        }
+
+        if (badResponse != null) {
+            return badResponse;
+        }
+        InsertEventScoreResponse insertEventScoreResponse = new InsertEventScoreResponse(request.getUserHash().toHexString(),
+                request.getEventType().toString(), request.getEventIdentifier().toHexString());
+        return ResponseEntity.status(HttpStatus.CREATED).body(insertEventScoreResponse);
     }
 
 
     public ResponseEntity<IResponse> insertChargeBackFrequencyBasedScore(InsertChargeBackFrequencyBasedScoreRequest request) {
-        try {
-            if (!checkIfSignerInList(request.getSignerHash())) {
-                return ResponseEntity
-                        .status(HttpStatus.UNAUTHORIZED)
-                        .body(new Response(UNKNOWN_SIGNER_ERROR, STATUS_ERROR));
-            }
-            if (!insertChargeBackFrequencyBasedScoreCrypto.verifySignature(request)) {
-                return ResponseEntity
-                        .status(HttpStatus.UNAUTHORIZED)
-                        .body(new Response(INSERT_EVENT_AUTHENTICATION_ERROR, STATUS_ERROR));
-            }
-
-            ChargeBackFrequencyBasedEventData chargeBackFrequencyBasedScoreData = new ChargeBackFrequencyBasedEventData(request);
-
-            BucketData bucketData = (BucketData) buckets.getByHash(getBucketHashByUserHashAndScoreType(request.userHash, EventType.CHARGEBACK_SCORE));
-
-            if (bucketData.getUserType() != UserType.MERCHANT) {
-                return ResponseEntity
-                        .status(HttpStatus.BAD_REQUEST)
-                        .body(new Response(String.format(USER_NOT_MERCHANT, request.userHash), STATUS_ERROR));
-            }
-
-            if (bucketData.getEventDataHashToEventDataMap().get(request.eventIdentifier) != null) {
-                return ResponseEntity
-                        .status(HttpStatus.BAD_REQUEST)
-                        .body(new Response(EVENT_EXIST, STATUS_ERROR));
-            }
-
-            bucketData.addScoreToBucketMap(chargeBackFrequencyBasedScoreData);
-            bucketChargeBackFrequencyBasedScoreService.addScoreToCalculations(chargeBackFrequencyBasedScoreData, (BucketChargeBackFrequencyBasedEventData) bucketData);
-
-            buckets.put(bucketData);
-
-            InsertChargeBackFrequencyBasedScoreResponse insertChargeBackFrequencyBasedScoreResponse =
-                    new InsertChargeBackFrequencyBasedScoreResponse(request.userHash.toHexString(),
-                            request.getEventIdentifier().toHexString(), request.getTransactionHash().toHexString(), request.getAmount().toString());
-            return ResponseEntity.status(HttpStatus.CREATED)
-                    .body(insertChargeBackFrequencyBasedScoreResponse);
-        } catch (Exception e) {
-            log.error(e.getMessage());
-            return ResponseEntity
-                    .status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body(new Response(INSERT_EVENT_SCORE_ERROR, STATUS_ERROR));
+        if (!checkIfSignerInList(request.getSignerHash())) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(new Response(UNKNOWN_SIGNER_ERROR, STATUS_ERROR));
         }
+        if (!insertChargeBackFrequencyBasedScoreCrypto.verifySignature(request)) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(new Response(INSERT_EVENT_AUTHENTICATION_ERROR, STATUS_ERROR));
+        }
+
+        ChargeBackFrequencyBasedEventData chargeBackFrequencyBasedScoreData = new ChargeBackFrequencyBasedEventData(request);
+
+        ResponseEntity badResponse = null;
+        synchronized ((addLockToLockMap(lockUserTrustScoresHashMap, request.getUserHash()))) {
+            BucketData bucketChargeBackData = (BucketData) buckets.getByHash(getBucketHashByUserHashAndScoreType(request.getUserHash(), EventType.CHARGEBACK_SCORE));
+
+            if (bucketChargeBackData.getUserType() != UserType.MERCHANT) {
+                badResponse = ResponseEntity.status(HttpStatus.BAD_REQUEST).body(new Response(String.format(USER_NOT_MERCHANT, request.getUserHash()), STATUS_ERROR));
+            } else if (bucketChargeBackData.getEventDataHashToEventDataMap().get(request.getEventIdentifier()) != null) {
+                badResponse = ResponseEntity.status(HttpStatus.BAD_REQUEST).body(new Response(EVENT_EXIST, STATUS_ERROR));
+            } else {
+                bucketChargeBackData.addScoreToBucketMap(chargeBackFrequencyBasedScoreData);
+                bucketChargeBackFrequencyBasedScoreService.addScoreToCalculations(chargeBackFrequencyBasedScoreData, (BucketChargeBackFrequencyBasedEventData) bucketChargeBackData);
+                buckets.put(bucketChargeBackData);
+            }
+            removeLockFromLocksMap(lockUserTrustScoresHashMap, request.getUserHash());
+        }
+
+        if (badResponse != null) {
+            return badResponse;
+        }
+        InsertChargeBackFrequencyBasedScoreResponse insertChargeBackFrequencyBasedScoreResponse =
+                new InsertChargeBackFrequencyBasedScoreResponse(request.getUserHash().toHexString(),
+                        request.getEventIdentifier().toHexString(), request.getTransactionHash().toHexString(), request.getAmount().toString());
+        return ResponseEntity.status(HttpStatus.CREATED).body(insertChargeBackFrequencyBasedScoreResponse);
     }
 
     private void insertFillQuestionnaireEvent(Hash userHash, DocumentRequestType documentRequestType) {
@@ -357,124 +344,115 @@ public class TrustScoreService {
     }
 
     public ResponseEntity<IResponse> insertDebtBalanceBasedScore(InsertDebtBalanceBasedScoreRequest request) {
+        if (!checkIfSignerInList(request.getSignerHash())) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(new Response(UNKNOWN_SIGNER_ERROR, STATUS_ERROR));
+        }
+        if (!insertDebtBalanceBasedScoreCrypto.verifySignature(request)) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(new Response(INSERT_EVENT_AUTHENTICATION_ERROR, STATUS_ERROR));
+        }
+
+        BalanceBasedEventData balanceBasedScoreData = null;
         try {
-            if (!checkIfSignerInList(request.getSignerHash())) {
-                return ResponseEntity
-                        .status(HttpStatus.UNAUTHORIZED)
-                        .body(new Response(UNKNOWN_SIGNER_ERROR, STATUS_ERROR));
-            }
-            if (!insertDebtBalanceBasedScoreCrypto.verifySignature(request)) {
-                return ResponseEntity
-                        .status(HttpStatus.UNAUTHORIZED)
-                        .body(new Response(INSERT_EVENT_AUTHENTICATION_ERROR, STATUS_ERROR));
-            }
-
-            BalanceBasedEventData balanceBasedScoreData = (BalanceBasedEventData) request.eventType.event.getDeclaredConstructor(InsertDebtBalanceBasedScoreRequest.class).newInstance(request);
-            BucketData bucketData = (BucketData) buckets.getByHash(getBucketHashByUserHashAndScoreType(request.userHash, EventType.DEBT_BALANCE_BASED_SCORE));
-
-            if (bucketData.getEventDataHashToEventDataMap().get(request.eventIdentifier) != null) {
-                return ResponseEntity
-                        .status(HttpStatus.BAD_REQUEST)
-                        .body(new Response(EVENT_EXIST, STATUS_ERROR));
-            }
-
-            bucketData.addScoreToBucketMap(balanceBasedScoreData);
-            bucketDebtBalanceBasedScoreService.addScoreToCalculations(balanceBasedScoreData, (BucketDebtBalanceBasedEventData) bucketData);
-
-            buckets.put(bucketData);
-
-            InsertDebtBalanceBasedScoreResponse insertDebtBalanceBasedScoreResponse = new InsertDebtBalanceBasedScoreResponse(request.userHash.toHexString(),
-                    request.getEventType().toString(), request.getAmount().toString(), request.getEventIdentifier().toHexString(), request.getOtherUserHash().toHexString());
-            return ResponseEntity.status(HttpStatus.CREATED)
-                    .body(insertDebtBalanceBasedScoreResponse);
+            balanceBasedScoreData = (BalanceBasedEventData) request.getEventType().event.getDeclaredConstructor(InsertDebtBalanceBasedScoreRequest.class).newInstance(request);
         } catch (Exception e) {
             log.error(e.getMessage());
             return ResponseEntity
                     .status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body(new Response(INSERT_EVENT_SCORE_ERROR, STATUS_ERROR));
         }
+
+        ResponseEntity badResponse = null;
+        synchronized ((addLockToLockMap(lockUserTrustScoresHashMap, request.getUserHash()))) {
+            BucketData bucketDebtData = (BucketData) buckets.getByHash(getBucketHashByUserHashAndScoreType(request.getUserHash(), EventType.DEBT_BALANCE_BASED_SCORE));
+
+            if (bucketDebtData.getEventDataHashToEventDataMap().get(request.getEventIdentifier()) != null) {
+                badResponse = ResponseEntity.status(HttpStatus.BAD_REQUEST).body(new Response(EVENT_EXIST, STATUS_ERROR));
+            } else {
+                bucketDebtData.addScoreToBucketMap(balanceBasedScoreData);
+                bucketDebtBalanceBasedScoreService.addScoreToCalculations(balanceBasedScoreData, (BucketDebtBalanceBasedEventData) bucketDebtData);
+                buckets.put(bucketDebtData);
+            }
+            removeLockFromLocksMap(lockUserTrustScoresHashMap, request.getUserHash());
+        }
+
+        if (badResponse != null) {
+            return badResponse;
+        }
+        InsertDebtBalanceBasedScoreResponse insertDebtBalanceBasedScoreResponse = new InsertDebtBalanceBasedScoreResponse(request.getUserHash().toHexString(),
+                    request.getEventType().toString(), request.getAmount().toString(), request.getEventIdentifier().toHexString(), request.getOtherUserHash().toHexString());
+        return ResponseEntity.status(HttpStatus.CREATED).body(insertDebtBalanceBasedScoreResponse);
     }
 
     public ResponseEntity<IResponse> insertDepositBalanceBasedScore(InsertDepositBalanceBasedScoreRequest request) {
+        if (!checkIfSignerInList(request.getSignerHash())) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(new Response(UNKNOWN_SIGNER_ERROR, STATUS_ERROR));
+        }
+        if (!insertDepositBalanceBasedScoreCrypto.verifySignature(request)) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(new Response(INSERT_EVENT_AUTHENTICATION_ERROR, STATUS_ERROR));
+        }
+
+        BalanceBasedEventData balanceBasedScoreData = null;
+
         try {
-            if (!checkIfSignerInList(request.getSignerHash())) {
-                return ResponseEntity
-                        .status(HttpStatus.UNAUTHORIZED)
-                        .body(new Response(UNKNOWN_SIGNER_ERROR, STATUS_ERROR));
-            }
-            if (!insertDepositBalanceBasedScoreCrypto.verifySignature(request)) {
-                return ResponseEntity
-                        .status(HttpStatus.UNAUTHORIZED)
-                        .body(new Response(INSERT_EVENT_AUTHENTICATION_ERROR, STATUS_ERROR));
-            }
-
-            BalanceBasedEventData balanceBasedScoreData = (BalanceBasedEventData) request.eventType.event.getDeclaredConstructor(InsertDepositBalanceBasedScoreRequest.class).newInstance(request);
-            BucketData bucketData = (BucketData) buckets.getByHash(getBucketHashByUserHashAndScoreType(request.userHash, EventType.DEPOSIT_BALANCE_BASED_SCORE));
-
-            if (bucketData.getEventDataHashToEventDataMap().get(request.eventIdentifier) != null) {
-                return ResponseEntity
-                        .status(HttpStatus.BAD_REQUEST)
-                        .body(new Response(EVENT_EXIST, STATUS_ERROR));
-            }
-
-            bucketData.addScoreToBucketMap(balanceBasedScoreData);
-            bucketDepositBalanceBasedScoreService.addScoreToCalculations(balanceBasedScoreData, (BucketDepositBalanceBasedEventData) bucketData);
-
-            buckets.put(bucketData);
-
-            InsertDepositBalanceBasedScoreResponse insertDepositBalanceBasedScoreResponse = new InsertDepositBalanceBasedScoreResponse(request.userHash.toHexString(),
-                    request.getEventType().toString(), request.getAmount().toString(), request.getEventIdentifier().toHexString());
-            return ResponseEntity.status(HttpStatus.CREATED)
-                    .body(insertDepositBalanceBasedScoreResponse);
+            balanceBasedScoreData = (BalanceBasedEventData) request.getEventType().event.getDeclaredConstructor(InsertDepositBalanceBasedScoreRequest.class).newInstance(request);
         } catch (Exception e) {
             log.error(e.getMessage());
             return ResponseEntity
                     .status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body(new Response(INSERT_EVENT_SCORE_ERROR, STATUS_ERROR));
         }
+
+        ResponseEntity badResponse = null;
+        synchronized ((addLockToLockMap(lockUserTrustScoresHashMap, request.getUserHash()))) {
+            BucketData bucketDepositData = (BucketData) buckets.getByHash(getBucketHashByUserHashAndScoreType(request.getUserHash(), EventType.DEPOSIT_BALANCE_BASED_SCORE));
+            if (bucketDepositData.getEventDataHashToEventDataMap().get(request.getEventIdentifier()) != null) {
+                badResponse = ResponseEntity.status(HttpStatus.BAD_REQUEST).body(new Response(EVENT_EXIST, STATUS_ERROR));
+            }
+
+            bucketDepositData.addScoreToBucketMap(balanceBasedScoreData);
+            bucketDepositBalanceBasedScoreService.addScoreToCalculations(balanceBasedScoreData, (BucketDepositBalanceBasedEventData) bucketDepositData);
+            buckets.put(bucketDepositData);
+            removeLockFromLocksMap(lockUserTrustScoresHashMap, request.getUserHash());
+        }
+
+        InsertDepositBalanceBasedScoreResponse insertDepositBalanceBasedScoreResponse = new InsertDepositBalanceBasedScoreResponse(request.getUserHash().toHexString(),
+                request.getEventType().toString(), request.getAmount().toString(), request.getEventIdentifier().toHexString());
+        return ResponseEntity.status(HttpStatus.CREATED).body(insertDepositBalanceBasedScoreResponse);
     }
 
     public ResponseEntity<IResponse> setUserType(SetUserTypeRequest request) {
-        try {
-            log.info("Setting UserType: " + request.getUserHash() + "=" + request.getUserType());
+        log.info("Setting UserType: " + request.getUserHash() + "=" + request.getUserType());
 
-            UserTrustScoreData userTrustScoreData = userTrustScores.getByHash(request.userHash);
-            if (userTrustScoreData == null) {
-                return ResponseEntity
-                        .status(HttpStatus.INTERNAL_SERVER_ERROR)
-                        .body(new Response(USER_HASH_IS_NOT_IN_DB, STATUS_ERROR));
-            }
-
-            if (!checkIfSignerInList(request.getSignerHash())) {
-                return ResponseEntity
-                        .status(HttpStatus.UNAUTHORIZED)
-                        .body(new Response(UNKNOWN_SIGNER_ERROR, STATUS_ERROR));
-            }
-            if (!trustScoreUserTypeCrypto.verifySignature(request)) {
-                return ResponseEntity
-                        .status(HttpStatus.UNAUTHORIZED)
-                        .body(new Response(SET_USER_TYPE_AUTHENTICATION_ERROR, STATUS_ERROR));
-            }
-            if (!changingIsLegal(userTrustScoreData)) {
-                return ResponseEntity
-                        .status(HttpStatus.UNAUTHORIZED)
-                        .body(new Response(USER_TYPE_ALREADY_UPDATED, STATUS_ERROR));
-            }
-
-            UserType userType = UserType.enumFromString(request.getUserType());
-            userTrustScoreData.setUserType(userType);
-            userTrustScores.put(userTrustScoreData);
-            updateUserTypeInBuckets(userTrustScoreData);
-
-            SetUserTypeResponse setUserTypeResponse = new SetUserTypeResponse(userType, request.getUserHash());
-            return ResponseEntity.status(HttpStatus.OK)
-                    .body(setUserTypeResponse);
-        } catch (Exception e) {
-            log.error(e.getMessage());
-            return ResponseEntity
-                    .status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body(new Response(USER_TYPE_SET_ERROR, STATUS_ERROR));
+        if (!checkIfSignerInList(request.getSignerHash())) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(new Response(UNKNOWN_SIGNER_ERROR, STATUS_ERROR));
         }
+        if (!trustScoreUserTypeCrypto.verifySignature(request)) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(new Response(SET_USER_TYPE_AUTHENTICATION_ERROR, STATUS_ERROR));
+        }
+
+        UserType userType = UserType.enumFromString(request.getUserType());
+        ResponseEntity badResponse = null;
+        synchronized ((addLockToLockMap(lockUserTrustScoresHashMap, request.getUserHash()))) {
+            UserTrustScoreData userTrustScoreData = userTrustScores.getByHash(request.getUserHash());
+            if (userTrustScoreData == null) {
+                badResponse = ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(new Response(USER_HASH_IS_NOT_IN_DB, STATUS_ERROR));
+            } else {
+                if (!changingIsLegal(userTrustScoreData)) {
+                    badResponse = ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(new Response(USER_TYPE_ALREADY_UPDATED, STATUS_ERROR));
+                } else {
+                    userTrustScoreData.setUserType(userType);
+                    userTrustScores.put(userTrustScoreData);
+                    updateUserTypeInBuckets(userTrustScoreData);
+                }
+            }
+            removeLockFromLocksMap(lockUserTrustScoresHashMap, request.getUserHash());
+        }
+
+        if (badResponse != null) {
+            return badResponse;
+        }
+        SetUserTypeResponse setUserTypeResponse = new SetUserTypeResponse(userType, request.getUserHash());
+        return ResponseEntity.status(HttpStatus.OK).body(setUserTypeResponse);
     }
 
 
@@ -542,20 +520,19 @@ public class TrustScoreService {
         }
 
         double trustScore = 10;
-
         LocalDate today = LocalDate.now(ZoneOffset.UTC);
-        for (IBucketService bucketService : bucketScoreServiceList) {
-            BucketData bucketData =
-                    (BucketData) buckets.getByHash(userTrustScoreData.getEventTypeToBucketHashMap().get(bucketService.getScoreType()));
-            if (bucketData != null) {
-                LocalDate previousUpdate = bucketData.getLastUpdate();
-
-                trustScore += bucketService.getBucketSumScore(bucketData);
-
-                if (!previousUpdate.equals(today)) {
-                    buckets.put(bucketData);
+        synchronized ((addLockToLockMap(lockUserTrustScoresHashMap, userTrustScoreData.getHash()))) {
+            for (IBucketService bucketService : bucketScoreServiceList) {
+                BucketData bucketData = (BucketData) buckets.getByHash(userTrustScoreData.getEventTypeToBucketHashMap().get(bucketService.getScoreType()));
+                if (bucketData != null) {
+                    LocalDate previousUpdate = bucketData.getLastUpdate();
+                    trustScore += bucketService.getBucketSumScore(bucketData);
+                    if (!previousUpdate.equals(today)) {
+                        buckets.put(bucketData);
+                    }
                 }
             }
+            removeLockFromLocksMap(lockUserTrustScoresHashMap, userTrustScoreData.getHash());
         }
         return Math.min(Math.max(trustScore, 0.1), 100.0);
     }
@@ -566,7 +543,7 @@ public class TrustScoreService {
         try {
             log.info("Purging: userHash =  {}", request.getUserHash());
 
-            UserTrustScoreData userTrustScoreData = userTrustScores.getByHash(request.userHash);
+            UserTrustScoreData userTrustScoreData = userTrustScores.getByHash(request.getUserHash());
 
             if (userTrustScoreData != null) {
 
@@ -628,30 +605,27 @@ public class TrustScoreService {
     }
 
     public ResponseEntity<IResponse> doSetUserZeroTrustFlag(SetUserZeroTrustFlagRequest request) {
-        try {
-            log.info("Setting Zero Trust Flag: userHash =  {}, ZTF = {}", request.getUserHash(), request.isZeroTrustFlag());
+        log.info("Setting Zero Trust Flag: userHash =  {}, ZTF = {}", request.getUserHash(), request.isZeroTrustFlag());
 
+        ResponseEntity badResponse = null;
+        synchronized ((addLockToLockMap(lockUserTrustScoresHashMap, request.getUserHash()))) {
             UserTrustScoreData userTrustScoreData = userTrustScores.getByHash(request.getUserHash());
             if (userTrustScoreData == null) {
-                return ResponseEntity
-                        .status(HttpStatus.BAD_REQUEST)
-                        .body(new Response(NON_EXISTING_USER_MESSAGE, STATUS_ERROR));
+                badResponse = ResponseEntity.status(HttpStatus.BAD_REQUEST).body(new Response(NON_EXISTING_USER_MESSAGE, STATUS_ERROR));
             } else {
                 userTrustScoreData.setZeroTrustFlag(request.isZeroTrustFlag());
                 userTrustScores.put(userTrustScoreData);
-
-                return ResponseEntity.status(HttpStatus.OK)
-                        .body(new SetUserZeroTrustFlagResponse(userTrustScoreData));
             }
-        } catch (Exception e) {
-            log.error(e.getMessage());
-            return ResponseEntity
-                    .status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body(new Response(ZERO_TRUST_FLAG_ERROR, STATUS_ERROR));
+            removeLockFromLocksMap(lockUserTrustScoresHashMap, request.getUserHash());
         }
+
+        if(badResponse != null) {
+            return badResponse;
+        }
+        return ResponseEntity.status(HttpStatus.OK).body(new SetUserZeroTrustFlagResponse(request));
     }
 
-    public synchronized void addTransactionToTsCalculation(TransactionData transactionData) {
+    public void addTransactionToTsCalculation(TransactionData transactionData) {
         try {
             if (EnumSet.of(TransactionType.ZeroSpend, TransactionType.Initial).contains(transactionData.getType()) || transactionData.getDspConsensusResult() == null ||
                     !transactionData.getDspConsensusResult().isDspConsensus()) {
@@ -682,22 +656,21 @@ public class TrustScoreService {
             return;
         }
 
-        BucketTransactionEventData bucketTransactionEventData
-                = (BucketTransactionEventData) buckets.getByHash(getBucketHashByUserHashAndScoreType(userHash, EventType.TRANSACTION));
-        if (bucketTransactionEventData == null) {
-            log.error("Transaction can not be added to TS calculation: bucket event data doesn't exist for user {}", userHash);
-            return;
+        synchronized ((addLockToLockMap(lockUserTrustScoresHashMap, userHash))) {
+            BucketTransactionEventData bucketTransactionEventData
+                    = (BucketTransactionEventData) buckets.getByHash(getBucketHashByUserHashAndScoreType(userHash, EventType.TRANSACTION));
+            if (bucketTransactionEventData == null) {
+                log.error("Transaction can not be added to TS calculation: bucket event data doesn't exist for user {}", userHash);
+            } else if (bucketTransactionEventData.getEventDataHashToEventDataMap().get(transactionData.getHash()) != null) {
+                log.debug("Transaction {} is already added to ts calculation", transactionData.getHash());
+            } else {
+                addToTransactionBucketsCalculation(userTrustScoreData, transactionData, bucketTransactionEventData);
+            }
+            removeLockFromLocksMap(lockUserTrustScoresHashMap, userHash);
         }
-
-        if (bucketTransactionEventData.getEventDataHashToEventDataMap().get(transactionData.getHash()) != null) {
-            log.debug("Transaction {} is already added to ts calculation", transactionData.getHash());
-            return;
-        }
-
-        addToTransactionBucketsCalculation(userTrustScoreData, transactionData, bucketTransactionEventData);
     }
 
-    private void createBuckets(UserTrustScoreData usertrustScoreData) {
+    private boolean createBuckets(UserTrustScoreData usertrustScoreData) {
         try {
             for (EventType score : EventType.values()) {
 
@@ -708,8 +681,10 @@ public class TrustScoreService {
                 buckets.put(bucketData);
                 usertrustScoreData.getEventTypeToBucketHashMap().put(score, bucketData.getHash());
             }
+            return true;
         } catch (IllegalAccessException | InstantiationException | NoSuchMethodException | InvocationTargetException e) {
             log.error(e.toString());
+            return false;
         }
     }
 
@@ -722,22 +697,25 @@ public class TrustScoreService {
                     AddressUserIndexData addressUserIndexData = addressUserIndex.getByHash(baseTransactionData.getAddressHash());
                     if (addressUserIndexData != null) {
                         UserTrustScoreData receiverUserTrustScoreData;
-                        BucketTransactionEventData receiverBucketTransactionEventData = null;
                         if (userTrustScoreData.getHash().equals(addressUserIndexData.getUserHash())) {
-                            receiverUserTrustScoreData = userTrustScoreData;
-                            receiverBucketTransactionEventData = bucketTransactionEventData;
+                            TransactionEventData receiverTransactionScoreData = new TransactionEventData(transactionData, baseTransactionData, userTrustScoreData.getUserType());
+                            bucketTransactionScoreService.addScoreToCalculations(receiverTransactionScoreData, bucketTransactionEventData);
                         } else {
-                            receiverUserTrustScoreData = userTrustScores.getByHash(addressUserIndexData.getUserHash());
-                            if (receiverUserTrustScoreData != null) {
-                                receiverBucketTransactionEventData = (BucketTransactionEventData) buckets.getByHash(receiverUserTrustScoreData.getEventTypeToBucketHashMap().get(EventType.TRANSACTION));
+                            synchronized ((addLockToLockMap(lockUserTrustScoresHashMap, addressUserIndexData.getUserHash()))) {
+                                BucketTransactionEventData receiverBucketTransactionEventData = null;
+                                receiverUserTrustScoreData = userTrustScores.getByHash(addressUserIndexData.getUserHash());
+                                if (receiverUserTrustScoreData != null) {
+                                    receiverBucketTransactionEventData = (BucketTransactionEventData) buckets.getByHash(receiverUserTrustScoreData.getEventTypeToBucketHashMap().get(EventType.TRANSACTION));
+                                    if (receiverBucketTransactionEventData != null) {
+                                        TransactionEventData receiverTransactionScoreData = new TransactionEventData(transactionData, baseTransactionData, receiverUserTrustScoreData.getUserType());
+                                        bucketTransactionScoreService.addScoreToCalculations(receiverTransactionScoreData, receiverBucketTransactionEventData);
+                                        buckets.put(receiverBucketTransactionEventData);
+                                    } else {
+                                        log.error("Transaction can not be added to balance TS calculation: User {} doesn't exist", addressUserIndexData.getUserHash());
+                                    }
+                                }
+                                removeLockFromLocksMap(lockUserTrustScoresHashMap, addressUserIndexData.getUserHash());
                             }
-                        }
-                        if (receiverBucketTransactionEventData != null) {
-                            TransactionEventData receiverTransactionScoreData = new TransactionEventData(transactionData, baseTransactionData, receiverUserTrustScoreData.getUserType());
-                            bucketTransactionScoreService.addScoreToCalculations(receiverTransactionScoreData, receiverBucketTransactionEventData);
-                            buckets.put(receiverBucketTransactionEventData);
-                        } else {
-                            log.error("Transaction can not be added to balance TS calculation: User {} doesn't exist", addressUserIndexData.getUserHash());
                         }
                     } else {
                         synchronized ((addLockToLockMap(lockUnlinkedAddressesHashMap, baseTransactionData.getAddressHash()))) {
@@ -776,19 +754,18 @@ public class TrustScoreService {
     private void addTransactionToChargeBackBucket(Hash userHash, TransactionData transactionData) {
         Hash bucketHash = getBucketHashByUserHashAndScoreType(userHash, EventType.CHARGEBACK_SCORE);
 
-        BucketChargeBackFrequencyBasedEventData bucketChargeBackEventsData = (BucketChargeBackFrequencyBasedEventData) buckets.getByHash(bucketHash);
-        bucketChargeBackFrequencyBasedScoreService.addPaymentTransactionToCalculations(transactionData, bucketChargeBackEventsData);
-        buckets.put(bucketChargeBackEventsData);
+        BucketChargeBackFrequencyBasedEventData bucketData = (BucketChargeBackFrequencyBasedEventData) buckets.getByHash(bucketHash);
+        bucketChargeBackFrequencyBasedScoreService.addPaymentTransactionToCalculations(transactionData, bucketData);
+        buckets.put(bucketData);
     }
 
     private void updateUserTypeInBuckets(UserTrustScoreData userTrustScoreData) {
-        for (Map.Entry<EventType, Hash> eventTypeToBucketHashEntry
-                : userTrustScoreData.getEventTypeToBucketHashMap().entrySet()) {
-            Hash bucketHash = eventTypeToBucketHashEntry.getValue();
-            BucketData bucket = (BucketData) buckets.getByHash(bucketHash);
-            if (bucket != null) {
-                bucket.setUserType(userTrustScoreData.getUserType());
-                buckets.put(bucket);
+        for (Map.Entry<EventType, Hash> eventTypeToBucketHashEntry : userTrustScoreData.getEventTypeToBucketHashMap().entrySet()) {
+            Hash userTypeChangeBucketHash = eventTypeToBucketHashEntry.getValue();
+            BucketData bucketData = (BucketData) buckets.getByHash(userTypeChangeBucketHash);
+            if (bucketData != null) {
+                bucketData.setUserType(userTrustScoreData.getUserType());
+                buckets.put(bucketData);
             }
         }
     }

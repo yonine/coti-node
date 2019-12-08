@@ -6,14 +6,13 @@ import lombok.Data;
 
 @Data
 public class SetUserZeroTrustFlagResponse extends BaseResponse {
-    private static final long serialVersionUID = -3647736768164695318L;
     private String userHash;
     private boolean zeroTrustFlag;
 
-    public SetUserZeroTrustFlagResponse(UserTrustScoreData userTrustScoreData) {
+    public SetUserZeroTrustFlagResponse(SetUserZeroTrustFlagRequest request) {
         super();
-        this.userHash = userTrustScoreData.getHash().toHexString();
-        this.zeroTrustFlag = userTrustScoreData.getZeroTrustFlag();
+        this.userHash = request.getUserHash().toHexString();
+        this.zeroTrustFlag = request.isZeroTrustFlag();
 
     }
 }
