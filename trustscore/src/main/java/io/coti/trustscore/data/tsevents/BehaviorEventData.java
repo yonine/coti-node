@@ -14,6 +14,6 @@ public abstract class BehaviorEventData extends SignedEventData {
     }
 
     public BehaviorEventData(InsertEventScoreRequest request) {
-        super(request, request.eventIdentifier);
+        super(request, request.getEventIdentifier());
     }
 }

@@ -2,7 +2,6 @@ package io.coti.trustscore.data.tsevents;
 
 import io.coti.basenode.data.Hash;
 import io.coti.basenode.data.interfaces.IEntity;
-import io.coti.trustscore.data.tsenums.FinalEventType;
 import io.coti.trustscore.http.SignedRequest;
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;

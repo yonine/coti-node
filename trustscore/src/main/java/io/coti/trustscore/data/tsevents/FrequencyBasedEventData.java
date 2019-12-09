@@ -14,10 +14,10 @@ public abstract class FrequencyBasedEventData extends SignedEventData {
     }
 
     public FrequencyBasedEventData(InsertEventScoreRequest request) {
-        super(request, request.eventIdentifier);
+        super(request, request.getEventIdentifier());
     }
 
     public FrequencyBasedEventData(InsertChargeBackFrequencyBasedScoreRequest request) {
-        super(request, request.eventIdentifier);
+        super(request, request.getEventIdentifier());
     }
 }
