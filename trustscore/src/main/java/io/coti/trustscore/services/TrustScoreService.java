@@ -187,13 +187,13 @@ public class TrustScoreService {
                         buckets.put(oldUserBucketData);
                     }
                 }
-                if(badResponse == null) {
+                if (badResponse == null) {
                     insertFillQuestionnaireEvent(request.getUserHash(), DocumentRequestType.KYC);
                     removeLockFromLocksMap(lockUserTrustScoresHashMap, request.getUserHash());
                 }
             }
 
-            if(badResponse != null){
+            if (badResponse != null) {
                 return badResponse;
             }
             kycTrustScoreResponse = new SetKycTrustScoreResponse(request.getUserHash().toHexString(), request.getKycTrustScore());
@@ -379,7 +379,7 @@ public class TrustScoreService {
             return badResponse;
         }
         InsertDebtBalanceBasedScoreResponse insertDebtBalanceBasedScoreResponse = new InsertDebtBalanceBasedScoreResponse(request.getUserHash().toHexString(),
-                    request.getEventType().toString(), request.getAmount().toString(), request.getEventIdentifier().toHexString(), request.getOtherUserHash().toHexString());
+                request.getEventType().toString(), request.getAmount().toString(), request.getEventIdentifier().toHexString(), request.getOtherUserHash().toHexString());
         return ResponseEntity.status(HttpStatus.CREATED).body(insertDebtBalanceBasedScoreResponse);
     }
 
@@ -619,7 +619,7 @@ public class TrustScoreService {
             removeLockFromLocksMap(lockUserTrustScoresHashMap, request.getUserHash());
         }
 
-        if(badResponse != null) {
+        if (badResponse != null) {
             return badResponse;
         }
         return ResponseEntity.status(HttpStatus.OK).body(new SetUserZeroTrustFlagResponse(request));
