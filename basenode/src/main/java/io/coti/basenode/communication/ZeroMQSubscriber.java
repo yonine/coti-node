@@ -5,6 +5,7 @@ import io.coti.basenode.communication.data.ZeroMQMessageData;
 import io.coti.basenode.communication.interfaces.IPropagationSubscriber;
 import io.coti.basenode.communication.interfaces.ISerializer;
 import io.coti.basenode.communication.interfaces.ISubscriberHandler;
+import io.coti.basenode.data.NetworkData;
 import io.coti.basenode.data.NodeType;
 import io.coti.basenode.data.PublisherHeartBeatData;
 import io.coti.basenode.data.interfaces.IPropagatable;
@@ -166,7 +167,9 @@ public class ZeroMQSubscriber implements IPropagationSubscriber {
 
     private void handleMessageData(IPropagatable messageData, Class<? extends IPropagatable> propagatedMessageType, NodeType publisherNodeType) {
         try {
-            subscriberHandler.get(propagatedMessageType.getSimpleName()).apply(publisherNodeType).accept(messageData);
+            if (!(propagatedMessageType.equals(NetworkData.class) && getMessageQueueSize(ZeroMQSubscriberQueue.NETWORK) != 0)) {
+                subscriberHandler.get(propagatedMessageType.getSimpleName()).apply(publisherNodeType).accept(messageData);
+            }
         } catch (ClassCastException e) {
             log.error("Invalid request received: " + e.getMessage());
         } catch (Exception e) {
