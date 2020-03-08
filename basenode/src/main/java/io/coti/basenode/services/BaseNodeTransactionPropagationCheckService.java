@@ -118,6 +118,9 @@ public class BaseNodeTransactionPropagationCheckService implements ITransactionP
 
     @Override
     public void sendUnconfirmedReceivedTransactions(long period) {
+        if (!unconfirmedReceivedTransactionHashesMap.isEmpty()) {
+            unconfirmedReceivedTransactionHashesMap.forEach((key, value) -> log.warn(key.toString()));
+        }   // todo delete after tests
         unconfirmedReceivedTransactionHashesMap
                 .entrySet()
                 .stream()
