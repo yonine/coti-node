@@ -10,7 +10,9 @@ public interface IReceiver {
 
     void initReceiverHandler();
 
-    void shutdown();
+    void setMessageQueuePause(Thread timeoutThread);
 
-    void setMessageQueuePausedUntil(long pauseTime);
+    void endMessageQueuePause(String ignored);
+
+    void shutdown();
 }
