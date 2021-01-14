@@ -1,5 +1,6 @@
 package io.coti.basenode.communication;
 
+import io.coti.basenode.communication.data.MonitorSocketData;
 import io.coti.basenode.communication.data.SenderSocketData;
 import io.coti.basenode.communication.interfaces.ISender;
 import io.coti.basenode.communication.interfaces.ISerializer;
@@ -42,11 +43,14 @@ public class ZeroMQSender implements ISender {
         if (senderSocketData == null) {
             senderSocketData = new SenderSocketData(zeroMQContext);
             ZMQ.Socket senderSocket = senderSocketData.getSenderSocket();
-            ZMQ.Socket monitorSocket = senderSocketData.getMonitorSocket();
+            ZMQ.Socket monitorSocket = senderSocketData.getMonitorSocketData().getMonitorSocket();
             senderSocketData.setMonitorThread(startMonitorThread(monitorSocket));
-            senderSocket.connect(addressAndPort);
-            receivingAddressToSenderSocketMapping.put(addressAndPort, senderSocketData);
-            log.info("ZeroMQ sender connecting to address {}", addressAndPort);
+            if (senderSocket.connect(addressAndPort)) {
+                log.info("ZeroMQ sender connected to address {}", addressAndPort);
+                receivingAddressToSenderSocketMapping.put(addressAndPort, senderSocketData);
+            } else {
+                log.error("ZeroMQ sender failed to connect to address {}", addressAndPort);
+            }
         } else {
             log.error("ZeroMQ sender already connected to address {}", addressAndPort);
         }
@@ -66,6 +70,9 @@ public class ZeroMQSender implements ISender {
                 } catch (ZMQException e) {
                     if (e.getErrorCode() == ZMQ.Error.ETERM.getCode()) {
                         contextTerminated.set(true);
+                    } else if (e.getErrorCode() == ZMQ.Error.EINTR.getCode()) {
+                        log.info("ZeroMQ subscriber thread is interrupted");
+                        Thread.currentThread().interrupt();
                     } else {
                         log.error("ZeroMQ exception at monitor sender thread", e);
                     }
@@ -73,7 +80,7 @@ public class ZeroMQSender implements ISender {
                     log.error("Exception at monitor sender thread", e);
                 }
             }
-            monitorSocket.close();
+           // monitorSocket.close();
         }, "MONITOR SENDER");
         monitorThread.start();
         return monitorThread;
@@ -115,18 +122,22 @@ public class ZeroMQSender implements ISender {
         SenderSocketData senderSocketData = receivingAddressToSenderSocketMapping.get(receivingFullAddress);
         if (senderSocketData != null) {
             ZMQ.Socket sender = senderSocketData.getSenderSocket();
-            ZMQ.Socket monitorSocket = senderSocketData.getMonitorSocket();
+            sender.disconnect(receivingFullAddress);
+//            sender.unbind("tcp://*:" + senderSocketData.getSenderPort());
 
-            sender.close();
-            monitorSocket.close();
-            Thread monitorThread = senderSocketData.getMonitorThread();
-            try {
-                monitorThread.interrupt();
-                monitorThread.join();
-            } catch (InterruptedException e) {
-                log.error("Interrupted ZeroMQ sender");
-                Thread.currentThread().interrupt();
-            }
+//            MonitorSocketData monitorSocketData = senderSocketData.getMonitorSocketData();
+//            ZMQ.Socket monitorSocket = monitorSocketData.getMonitorSocket();
+////            monitorSocket.unbind(monitorSocketData.getMonitorAddress());
+//            monitorSocket.close();
+//
+//            Thread monitorThread = senderSocketData.getMonitorThread();
+//            try {
+//                monitorThread.interrupt();
+//                monitorThread.join();
+//            } catch (InterruptedException e) {
+//                log.error("Interrupted ZeroMQ sender");
+//                Thread.currentThread().interrupt();
+//            }
             log.info("ZeroMQ sender closing connection with node of type {} and address {}", nodeType, receivingFullAddress);
             receivingAddressToSenderSocketMapping.remove(receivingFullAddress);
         } else {

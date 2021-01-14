@@ -9,14 +9,15 @@ import org.zeromq.ZMQ;
 public class SenderSocketData {
 
     private final ZMQ.Socket senderSocket;
-    private final ZMQ.Socket monitorSocket;
+    private final int senderPort;
+    private final MonitorSocketData monitorSocketData;
     private Thread monitorThread;
 
     public SenderSocketData(ZMQ.Context zeroMQContext) {
         senderSocket = zeroMQContext.socket(SocketType.DEALER);
         senderSocket.setHWM(10000);
         senderSocket.setLinger(100);
-        monitorSocket = ZeroMQUtils.createAndConnectMonitorSocket(zeroMQContext, senderSocket);
-        ZeroMQUtils.bindToRandomPort(senderSocket);
+        monitorSocketData = ZeroMQUtils.getMonitorSocketData(zeroMQContext, senderSocket);
+        senderPort = ZeroMQUtils.bindToRandomPort(senderSocket);
     }
 }

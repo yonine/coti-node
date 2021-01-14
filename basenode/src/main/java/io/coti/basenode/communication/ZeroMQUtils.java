@@ -1,5 +1,6 @@
 package io.coti.basenode.communication;
 
+import io.coti.basenode.communication.data.MonitorSocketData;
 import lombok.extern.slf4j.Slf4j;
 import org.zeromq.SocketType;
 import org.zeromq.ZMQ;
@@ -44,6 +45,12 @@ public class ZeroMQUtils {
 
     private static String getMonitorSocketAddress(ZMQ.Socket socket) {
         return "inproc://" + socket.getSocketType().name() + Instant.now().toEpochMilli();
+    }
+
+    public static MonitorSocketData getMonitorSocketData(ZMQ.Context zeroMQContext, ZMQ.Socket socket) {
+        String monitorAddress = getMonitorSocketAddress(socket);
+        ZMQ.Socket monitorSocket = createAndConnectMonitorSocket(zeroMQContext, socket, monitorAddress);
+        return new MonitorSocketData(monitorSocket, monitorAddress);
     }
 
     public static void getServerSocketEvent(ZMQ.Socket monitorSocket, SocketType socketType, AtomicBoolean monitorInitialized, AtomicBoolean contextTerminated) {
